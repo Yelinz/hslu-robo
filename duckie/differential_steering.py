@@ -51,6 +51,6 @@ class DifferentialSteering:
 
 
 if __name__ == '__main__':
-    robot_name = "alpha"
+    robot_name = "lamda"
     ds = DifferentialSteering(robot_name)
     ds.run()

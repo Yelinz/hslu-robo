@@ -75,6 +75,6 @@ class Breitenberg:
 
 
 if __name__ == '__main__':
-    b = Breitenberg("alpha")
+    b = Breitenberg("lamda")
     b.run()
 
