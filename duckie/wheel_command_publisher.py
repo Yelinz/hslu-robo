@@ -20,11 +20,10 @@ class WheelCommandPublisher:
         # create a WheelsCmdStamped message
         self.command = WheelsCmdStamped()
         self.command.header = Header()
-   
 
     def turn_wheels(self, velocity):
         self.command.vel_left = velocity
-        self.command.vel_right = velocity
+        self.command.vel_right = -velocity*0.5
 
         self.command.header.stamp = rospy.Time.now()
         self.publisher.publish(self.command)
@@ -32,7 +31,7 @@ class WheelCommandPublisher:
 
     def run(self):
         self.turn_wheels(0.3)
-        rospy.sleep(3) # wait 3 seconds
+        rospy.sleep(5) # wait 3 seconds
         # stop wheels
         self.turn_wheels(0.0)
 
