@@ -102,6 +102,49 @@ class ForwardKinematics:
 
         return M
 
+    def calculate_inverse_kinematics(self, start_angles, end_coordinates):
+        start_pose = self.calculate_forward_kinematics(start_angles)
+        end_pose = np.eye(4)
+        end_pose[0][3] = end_coordinates[0]
+        end_pose[1][3] = end_coordinates[1]
+        end_pose[2][3] = end_coordinates[2]
+
+        for i, joint_angle in enumerate(end_angles):
+            end_pose = end_pose @ self.get_inverse_transformation_matrix(joint_angle, i)
+
+        # https://mecharithm.com/learning/lesson/explicit-representations-orientation-robotics-roll-pitch-yaw-angles-15
+
+        return end_pose
+
+    def get_inverse_transformation_matrix(self, theta, n):
+        a = [0, -0.24355, -0.2132, 0, 0, 0]
+        d = [0.15185, 0, 0, 0.13105, 0.08535, 0.0921]
+        alpha = [3.14 / 2, 0, 0, 3.14 / 2, (-3.14) / 2, 0]
+
+        M = [
+            [
+                np.cos(theta),
+                np.sin(theta),
+                0,
+                -a[n],
+            ],
+            [
+                -np.sin(theta) * np.cos(alpha[n]),
+                np.cos(theta) * np.cos(alpha[n]),
+                np.sin(alpha[n]),
+                -d[n] * np.sin(alpha[n]),
+            ],
+            [
+                np.sin(alpha[n]) * np.sin(theta),
+                -np.cos(theta) * np.sin(alpha[n]),
+                np.cos(alpha[n]),
+                -d[n] * np.cos(alpha[n])
+            ],
+            [0, 0, 0, 1],
+        ]
+
+        return M
+
     # the following function creates a PoseStamped message from a homogeneous matrix
     def get_pose_message_from_matrix(self, matrix):
         """Return pose msgs from homogen matrix
