@@ -13,12 +13,11 @@ class ForwardKinematics:
         # we create two publishers in our ROS node
         # one to publish the angles of the joints (joint states)
         # and another for visualizing a target pose (to see whether your calculations are correct)
-        self.joint_state_publisher = rospy.Publisher(
-            "my_joint_states", JointState, queue_size=10
-        )
-        self.pose_publisher = rospy.Publisher("my_pose", PoseStamped, queue_size=10)
-        rospy.init_node("my_joint_state_publisher")
-        self.rate = rospy.Rate(1)
+        self.robot_name = "beta"
+        self.joint_state_publisher = rospy.Publisher(self.robot_name+'_joint_states', JointState, queue_size=1) 
+        self.pose_publisher = rospy.Publisher(self.robot_name+'_pose', PoseStamped, queue_size=1)
+        rospy.init_node(self.robot_name+'_joint_state_publisher')
+        self.rate = rospy.Rate(0.1)
         rospy.sleep(3.0)
 
     def run(self):
@@ -26,7 +25,7 @@ class ForwardKinematics:
         # documentation of urdf_parser_py see http://wiki.ros.org/urdfdom_py
         robot = URDF.from_parameter_server()
         root = robot.get_root()
-        tip = "tool0"
+        tip = "beta_tool0"
         joint_names = robot.get_chain(root, tip, joints=True, links=False, fixed=False)
         # the properties of a given joint / link can be obtained with the joint_map
         # see http://wiki.ros.org/urdf/XML/joint
@@ -39,7 +38,7 @@ class ForwardKinematics:
         js.position = joint_angles
 
         end_effector_pose = self.calculate_forward_kinematics(
-            joint_angles, joint_names, robot
+            joint_angles
         )
 
         #print(end_effector_pose @ joint_angles)
@@ -50,6 +49,7 @@ class ForwardKinematics:
                 "error, no target pose calculated, use identity matrix instead"
             )
             target_pose_message = self.get_pose_message_from_matrix(np.identity(4))
+
 
         # publish the joint state values and the target pose
         print(target_pose_message)
@@ -64,13 +64,15 @@ class ForwardKinematics:
                 angles, joint_names, robot
             )
             target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
-            i += 0.1
             """
+            i += 0.01
             self.joint_state_publisher.publish(js)
+            inverse_target = self.calculate_inverse_kinematics(joint_angles, [0.5, 0.5, 0.5])
+            target_pose_message = self.get_pose_message_from_matrix(inverse_target)
             self.pose_publisher.publish(target_pose_message)
             rospy.sleep(1)
 
-    def calculate_forward_kinematics(self, joint_positions, joint_names, robot):
+    def calculate_forward_kinematics(self, joint_positions):
         pose = np.eye(4)
 
         for i, joint_angle in enumerate(joint_positions):
@@ -101,20 +103,104 @@ class ForwardKinematics:
         ]
 
         return M
-
+    
     def calculate_inverse_kinematics(self, start_angles, end_coordinates):
+        """
         start_pose = self.calculate_forward_kinematics(start_angles)
         end_pose = np.eye(4)
         end_pose[0][3] = end_coordinates[0]
         end_pose[1][3] = end_coordinates[1]
         end_pose[2][3] = end_coordinates[2]
+        """
 
-        for i, joint_angle in enumerate(end_angles):
-            end_pose = end_pose @ self.get_inverse_transformation_matrix(joint_angle, i)
+        v_step_size = 0.05
+        theta_max_step = 0.2
+        start_pose = self.calculate_forward_kinematics(start_angles)
+        current_positions = np.array([start_pose[0][3], start_pose[1][3], start_pose[2][3]])
+        end_coordinates = np.array(end_coordinates)
+        delta_p = end_coordinates - current_positions  # delta_x, delta_y, delta_z between start position and desired final position of end effector
+        step = 0
+        max_steps = 1000
+        while np.linalg.norm(delta_p) > 0.01 and step < max_steps:
+            rospy.loginfo_throttle(0.2, f"inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}, {start_angles}")
+            # Reduce the delta_p 3-element delta_p vector by some scaling factor
+            # delta_p represents the distance between where the end effector is now and our goal position.
+            v_p = delta_p #* v_step_size / np.linalg.norm(delta_p)
 
-        # https://mecharithm.com/learning/lesson/explicit-representations-orientation-robotics-roll-pitch-yaw-angles-15
+            # Get the jacobian matrix given the current joint angles
+            J_j = self.jacobian(start_angles)
+
+            # Calculate the pseudo-inverse of the Jacobian matrix
+            J_invj = np.linalg.pinv(J_j)
+
+            # Multiply the two matrices together
+            v_Q = np.matmul(J_invj, v_p)
+
+            # Move the joints to new angles
+            # We use the np.clip method here so that the joint doesn't move too much. We
+            # just want the joints to move a tiny amount at each time step because
+            # the full motion of the end effector is nonlinear, and we're approximating the
+            # big nonlinear motion of the end effector as a bunch of tiny linear motions.
+            """
+            start_angles += np.clip(
+                v_Q, -1 * theta_max_step, theta_max_step
+            )  # [:self.N_joints]
+            """
+            start_angles += v_Q
+
+            # Get the current position of the end-effector in the global frame
+            # p_j = self.position(Q_j, p_i=p_eff_N)
+            end_pose = self.calculate_forward_kinematics(start_angles)
+            current_positions = np.array([end_pose[0][3], end_pose[1][3], end_pose[2][3]])
+
+            # Increment the time step
+            step += 1
+
+            # Determine the difference between the new position and the desired end position
+            delta_p = end_coordinates - current_positions
+        rospy.loginfo_throttle(0.1, f"finish inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}, {start_angles}")
 
         return end_pose
+
+    def jacobian(self, angles):
+        """
+        Computes the Jacobian (just the position, not the orientation)
+
+        :param Q: An N element array containing the current joint angles in radians
+
+        Output
+        :return: A 3xN 2D matrix containing the Jacobian matrix
+        """
+        axes = [
+            [0, 0, 1],
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [0, 1, 0],
+        ]
+
+        # Position of the end effector in global frame
+        pose_effector = self.get_transformation_matrix(angles[5], 5)
+        effector_position = np.array([pose_effector[0][3], pose_effector[1][3], pose_effector[2][3]])
+        for i in range(6):
+            # Difference in the position of the end effector in the global frame
+            # and this joint in the global frame
+            pose_joint = self.get_transformation_matrix(angles[i], i)
+            joint_positions = np.array([pose_joint[0][3], pose_joint[1][3], pose_joint[2][3]])
+            p_delta = effector_position - joint_positions
+
+            joint_cross = np.cross(axes[i], p_delta)
+            joint_jacobian = np.array([[joint_cross[0]], [joint_cross[1]], [joint_cross[2]]])
+            if i == 0:
+                jacobian_matrix = joint_jacobian
+            else:
+                jacobian_matrix = np.concatenate(
+                    (jacobian_matrix, joint_jacobian), axis=1
+                )
+
+        return jacobian_matrix
+
 
     def get_inverse_transformation_matrix(self, theta, n):
         a = [0, -0.24355, -0.2132, 0, 0, 0]
