@@ -6,6 +6,7 @@ import math
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped
 from urdf_parser_py.urdf import URDF
+from backwards import get_theta
 
 
 class ForwardKinematics:
@@ -52,8 +53,9 @@ class ForwardKinematics:
 
 
         # publish the joint state values and the target pose
-        print(target_pose_message)
         i=0
+        #iinverse_target = self.calculate_inverse_kinematics(joint_angles, [0.5, 0.1, 0.5])
+        #print(inverse_target)
         while not rospy.is_shutdown():
             """
             angles = [i, 0, 0, 0, 0, 0]
@@ -66,11 +68,16 @@ class ForwardKinematics:
             target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
             """
             i += 0.01
+            target_angles = get_theta([0.5, 0.1+i, 0.5], joint_angles)
+            js = JointState()
+            js.name = joint_names
+            js.position = target_angles
+            end_effector_pose = self.calculate_forward_kinematics(target_angles)
+            target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
+
             self.joint_state_publisher.publish(js)
-            inverse_target = self.calculate_inverse_kinematics(joint_angles, [0.5, 0.5, 0.5])
-            target_pose_message = self.get_pose_message_from_matrix(inverse_target)
             self.pose_publisher.publish(target_pose_message)
-            rospy.sleep(1)
+            rospy.sleep(0.5)
 
     def calculate_forward_kinematics(self, joint_positions):
         pose = np.eye(4)
@@ -103,6 +110,16 @@ class ForwardKinematics:
         ]
 
         return M
+
+    def get_eueler_angles(self, angles):
+        end_effector_pose = self.calculate_forward_kinematics(angles)
+        x = end_effector_pose[0][3]
+        y = end_effector_pose[1][3]
+        z = end_effector_pose[2][3]
+        pitch = math.atan2(-end_effector_pose[2][0], math.sqrt(end_effector_pose[0][0] ** 2 + end_effector_pose[1][0] ** 2))
+        yaw = math.atan2(end_effector_pose[1][0] / math.cos(pitch), end_effector_pose[0][0] / math.cos(pitch))
+        roll = math.atan2(end_effector_pose[2][1] / math.cos(pitch), end_effector_pose[2][2] / math.cos(pitch)) 
+        return np.array([x, y, z, pitch, yaw, roll])
     
     def calculate_inverse_kinematics(self, start_angles, end_coordinates):
         """
@@ -113,20 +130,18 @@ class ForwardKinematics:
         end_pose[2][3] = end_coordinates[2]
         """
 
-        v_step_size = 0.05
         theta_max_step = 0.2
         start_pose = self.calculate_forward_kinematics(start_angles)
-        current_positions = np.array([start_pose[0][3], start_pose[1][3], start_pose[2][3]])
-        end_coordinates = np.array(end_coordinates)
-        delta_p = end_coordinates - current_positions  # delta_x, delta_y, delta_z between start position and desired final position of end effector
+        print(f'start pose: {start_pose}')
+
+        # current_positions = np.array([start_pose[0][3], start_pose[1][3], start_pose[2][3]])
+        current_positions = self.get_eueler_angles(start_angles)
+        end_coordinates = np.array([0.5, 0.1, 0.5, 0, 0, 0])
+        delta_p = end_coordinates - current_positions
         step = 0
         max_steps = 1000
         while np.linalg.norm(delta_p) > 0.01 and step < max_steps:
-            rospy.loginfo_throttle(0.2, f"inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}, {start_angles}")
-            # Reduce the delta_p 3-element delta_p vector by some scaling factor
-            # delta_p represents the distance between where the end effector is now and our goal position.
-            v_p = delta_p #* v_step_size / np.linalg.norm(delta_p)
-
+            print(f"start inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}")
             # Get the jacobian matrix given the current joint angles
             J_j = self.jacobian(start_angles)
 
@@ -134,64 +149,42 @@ class ForwardKinematics:
             J_invj = np.linalg.pinv(J_j)
 
             # Multiply the two matrices together
-            v_Q = np.matmul(J_invj, v_p)
+            v_Q = np.matmul(J_invj, delta_p)
 
             # Move the joints to new angles
             # We use the np.clip method here so that the joint doesn't move too much. We
             # just want the joints to move a tiny amount at each time step because
             # the full motion of the end effector is nonlinear, and we're approximating the
             # big nonlinear motion of the end effector as a bunch of tiny linear motions.
-            """
-            start_angles += np.clip(
+            clipped = np.clip(
                 v_Q, -1 * theta_max_step, theta_max_step
-            )  # [:self.N_joints]
-            """
-            start_angles += v_Q
+            )
+            start_angles += clipped 
 
             # Get the current position of the end-effector in the global frame
             # p_j = self.position(Q_j, p_i=p_eff_N)
             end_pose = self.calculate_forward_kinematics(start_angles)
             current_positions = np.array([end_pose[0][3], end_pose[1][3], end_pose[2][3]])
+            current_positions = self.get_eueler_angles(start_angles)
 
             # Increment the time step
             step += 1
 
             # Determine the difference between the new position and the desired end position
             delta_p = end_coordinates - current_positions
-        rospy.loginfo_throttle(0.1, f"finish inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}, {start_angles}")
+        rospy.loginfo_throttle(0.1, f"finish inverse kinematics: {current_positions}, {np.linalg.norm(delta_p)}")
 
         return end_pose
 
     def jacobian(self, angles):
-        """
-        Computes the Jacobian (just the position, not the orientation)
-
-        :param Q: An N element array containing the current joint angles in radians
-
-        Output
-        :return: A 3xN 2D matrix containing the Jacobian matrix
-        """
-        axes = [
-            [0, 0, 1],
-            [1, 0, 0],
-            [0, 1, 0],
-            [0, 1, 0],
-            [0, 0, 1],
-            [0, 1, 0],
-        ]
-
         # Position of the end effector in global frame
-        pose_effector = self.get_transformation_matrix(angles[5], 5)
-        effector_position = np.array([pose_effector[0][3], pose_effector[1][3], pose_effector[2][3]])
+        start_positions = self.get_eueler_angles(angles)
         for i in range(6):
-            # Difference in the position of the end effector in the global frame
-            # and this joint in the global frame
-            pose_joint = self.get_transformation_matrix(angles[i], i)
-            joint_positions = np.array([pose_joint[0][3], pose_joint[1][3], pose_joint[2][3]])
-            p_delta = effector_position - joint_positions
-
-            joint_cross = np.cross(axes[i], p_delta)
-            joint_jacobian = np.array([[joint_cross[0]], [joint_cross[1]], [joint_cross[2]]])
+            joint_angle = angles.copy()
+            joint_angle[i] += 0.000001
+            new_positions = self.get_eueler_angles(joint_angle)
+            delta = start_positions - new_positions
+            joint_jacobian = np.array([[delta[0]], [delta[1]], [delta[2]]])
             if i == 0:
                 jacobian_matrix = joint_jacobian
             else:
@@ -201,35 +194,6 @@ class ForwardKinematics:
 
         return jacobian_matrix
 
-
-    def get_inverse_transformation_matrix(self, theta, n):
-        a = [0, -0.24355, -0.2132, 0, 0, 0]
-        d = [0.15185, 0, 0, 0.13105, 0.08535, 0.0921]
-        alpha = [3.14 / 2, 0, 0, 3.14 / 2, (-3.14) / 2, 0]
-
-        M = [
-            [
-                np.cos(theta),
-                np.sin(theta),
-                0,
-                -a[n],
-            ],
-            [
-                -np.sin(theta) * np.cos(alpha[n]),
-                np.cos(theta) * np.cos(alpha[n]),
-                np.sin(alpha[n]),
-                -d[n] * np.sin(alpha[n]),
-            ],
-            [
-                np.sin(alpha[n]) * np.sin(theta),
-                -np.cos(theta) * np.sin(alpha[n]),
-                np.cos(alpha[n]),
-                -d[n] * np.cos(alpha[n])
-            ],
-            [0, 0, 0, 1],
-        ]
-
-        return M
 
     # the following function creates a PoseStamped message from a homogeneous matrix
     def get_pose_message_from_matrix(self, matrix):
