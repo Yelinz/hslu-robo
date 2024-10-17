@@ -31,16 +31,15 @@ def get_eueler_angles(m):
         z = m[2, 3]
 
 
+        """
         # wikipedia
-
         pitch = math.atan2(m[2, 0], m[2, 1])
         roll = math.acos(m[2, 2])
         yaw = -math.atan2(m[0, 2], m[1, 2])
 
-        """
         stackoverflow
-        yaw = math.atan2(m[1, 0], m[0, 0])
         pitch = math.atan2(-m[2, 0], np.sqrt(m[0, 0] ** 2 + m[1, 0] ** 2))
+        yaw = math.atan2(m[1, 0], m[0, 0])
         roll = math.atan2(m[2, 1], m[2, 2])
 
         chatgpt
@@ -48,12 +47,34 @@ def get_eueler_angles(m):
         yaw = math.atan2(m[1][0] / np.cos(pitch), m[0][0] / np.cos(pitch))
         roll = math.atan2(m[2][1] / np.cos(pitch), m[2][2] / np.cos(pitch)) 
         """
+
+
+        #https://eecs.qmul.ac.uk/~gslabaugh/publications/euler.pdf
+        if not np.isclose(m[2, 0], 1) and not np.isclose(m[2, 0], -1):
+            pitch_1 = -math.asin(m[2, 0])
+            pitch_2 = math.pi - pitch_1
+            roll_1 = math.atan2(m[2, 1] / math.cos(pitch_1), m[2, 2] / math.cos(pitch_1))
+            roll_2 = math.atan2(m[2, 1] / math.cos(pitch_2), m[2, 2] / math.cos(pitch_2))
+            yaw_1 = math.atan2(m[1, 0] / math.cos(pitch_1), m[0, 0] / math.cos(pitch_1))
+            yaw_2 = math.atan2(m[1, 0] / math.cos(pitch_2), m[0, 0] / math.cos(pitch_2))
+            pitch = pitch_1
+            roll = roll_1
+            yaw = yaw_1
+        else:
+            roll = 0
+            if np.isclose(m[2, 0], -1):
+                pitch = math.pi / 2
+                yaw = roll + math.atan2(m[0, 1], m[1, 1])
+            else:
+                pitch = -math.pi / 2
+                yaw = -roll + math.atan2(-m[0, 1], -m[1, 1])
+
         return np.array([x, y, z, pitch, yaw, roll])
 
 
 def calculate_inverse_kinematics(target_coordinates, theta):
     """
-    target_coordinates: [x, y, z, pitch, yaw, roll] 
+    target_coordinates: [x, y, z, x axis rotation, yaw, roll] 
     """
     x_target = target_coordinates
     theta = theta.copy()
@@ -64,7 +85,6 @@ def calculate_inverse_kinematics(target_coordinates, theta):
         m_theta = calculate_forward_kinematics(theta)
 
         x_theta = get_eueler_angles(m_theta)
-        print(x_theta)
         f_theta = x_theta - x_target
 
         j_theta = jacobian_matrix(theta)
