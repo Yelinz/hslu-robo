@@ -93,4 +93,13 @@ def calculate_inverse_kinematics(target_coordinates, theta):
         theta = theta - j_theta_inv @ f_theta
         i += 1
 
-    return theta
+    result = []
+    for angle in theta:
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        result.append(angle)
+
+    result[5] = 3.14
+    return result 
