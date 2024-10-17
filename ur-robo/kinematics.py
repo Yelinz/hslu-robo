@@ -7,6 +7,7 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped
 from urdf_parser_py.urdf import URDF
 from backwards import calculate_inverse_kinematics
+from backwards import get_eueler_angles
 from forwards import calculate_forward_kinematics
 
 
@@ -55,29 +56,42 @@ class ForwardKinematics:
         # publish the joint state values and the target pose
         i=0
         while not rospy.is_shutdown():
-            """"
+            """
             i += 0.01
-            angles = [3.14/2, -3.14/2, 0, 0, 0, 0]
+            angles = [3.14, -3.14/2, 0, 0, 0, 3.14/2]
             js = JointState()
             js.name = joint_names
             js.position = angles
-            end_effector_pose = self.calculate_forward_kinematics( angles)
+            end_effector_pose = calculate_forward_kinematics(angles)
             target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
+
+            pos = get_eueler_angles(end_effector_pose)
+            print(pos)
+
             """
-            
+
             # TODO X, Y are swapped signs
             # pitch roll?
-            target_angles = calculate_inverse_kinematics([-0.3, 0.2, 0.3, 0, 0, 0], joint_angles)
-            js = JointState()
-            js.name = joint_names
+            target_angles = calculate_inverse_kinematics([-0.25, 0.45, 0.15, 0, 3.14, 3.14/2], joint_angles)
             js.position = target_angles
-            end_effector_pose = calculate_forward_kinematics(target_angles)
-            target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
-            
+            self.joint_state_publisher.publish(js)
+            rospy.sleep(3)
+            target_angles = calculate_inverse_kinematics([-0.25, 0.45, 0.31, 0, 3.14, 3.14/2], target_angles)
+            js.position = target_angles
+            self.joint_state_publisher.publish(js)
+            rospy.sleep(3)
+            target_angles = calculate_inverse_kinematics([0.25, 0.45, 0.31, 0, 3.14, 3.14/2], target_angles)
+            js.position = target_angles
+            self.joint_state_publisher.publish(js)
+            rospy.sleep(3)
+            target_angles = calculate_inverse_kinematics([0.25, 0.45, 0.15, 0, 3.14, 3.14/2], target_angles)
+            js.position = target_angles
+            # end_effector_pose = calculate_forward_kinematics(target_angles)
+            # target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
 
             self.joint_state_publisher.publish(js)
-            self.pose_publisher.publish(target_pose_message)
-            rospy.sleep(0.5)
+            # self.pose_publisher.publish(target_pose_message)
+            rospy.sleep(3)
 
 
     # the following function creates a PoseStamped message from a homogeneous matrix
