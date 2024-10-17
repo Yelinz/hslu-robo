@@ -33,7 +33,7 @@ class ForwardKinematics:
         # the properties of a given joint / link can be obtained with the joint_map
         # see http://wiki.ros.org/urdf/XML/joint
 
-        joint_angles = [3.14/2, -3.14/2, 0, 0, 0, 0]  # in radians
+        joint_angles = [0, -1.57, 0, 0, 0, 0]  # in radians
 
         # create the joint state messages
         js = JointState()
@@ -54,11 +54,11 @@ class ForwardKinematics:
 
 
         # publish the joint state values and the target pose
-        i=0
         while not rospy.is_shutdown():
             """
-            i += 0.01
-            angles = [3.14, -3.14/2, 0, 0, 0, 3.14/2]
+            # find wanted pitch roll yaw
+            
+            angles = [0, -3.14/2, 0, 0, 0, 3.14/2]
             js = JointState()
             js.name = joint_names
             js.position = angles
@@ -67,27 +67,36 @@ class ForwardKinematics:
 
             pos = get_eueler_angles(end_effector_pose)
             print(pos)
-
             """
-
             # TODO X, Y are swapped signs
-            # pitch roll?
-            target_angles = calculate_inverse_kinematics([-0.25, 0.45, 0.15, 0, 3.14, 3.14/2], joint_angles)
+            target_angles = calculate_inverse_kinematics([0.30, -0.45, 0.30, 0, 0, 3.14/2], joint_angles)
+            js.position = target_angles
+            print("step 1", target_angles)
+            self.joint_state_publisher.publish(js)
+            rospy.sleep(1)
+            target_angles = calculate_inverse_kinematics([0.30, -0.45, 0.17, 0, 0, 3.14/2], target_angles)
+            print("step 2", target_angles)
             js.position = target_angles
             self.joint_state_publisher.publish(js)
-            rospy.sleep(3)
-            target_angles = calculate_inverse_kinematics([-0.25, 0.45, 0.31, 0, 3.14, 3.14/2], target_angles)
+            rospy.sleep(1)
+            target_angles = calculate_inverse_kinematics([0.30, -0.45, 0.30, 0, 0, 3.14/2], target_angles)
+            print("step 3", target_angles)
             js.position = target_angles
             self.joint_state_publisher.publish(js)
-            rospy.sleep(3)
-            target_angles = calculate_inverse_kinematics([0.25, 0.45, 0.31, 0, 3.14, 3.14/2], target_angles)
+            rospy.sleep(1)
+            target_angles = calculate_inverse_kinematics([0, -0.45, 0.35, 0, 0, 3.14/2], target_angles)
+            print("step 4", target_angles)
             js.position = target_angles
             self.joint_state_publisher.publish(js)
-            rospy.sleep(3)
-            target_angles = calculate_inverse_kinematics([0.25, 0.45, 0.15, 0, 3.14, 3.14/2], target_angles)
+            rospy.sleep(1)
+            target_angles = calculate_inverse_kinematics([-0.30, -0.45, 0.30, 0, 0, 3.14/2], target_angles)
+            print("step 5", target_angles)
             js.position = target_angles
-            # end_effector_pose = calculate_forward_kinematics(target_angles)
-            # target_pose_message = self.get_pose_message_from_matrix(end_effector_pose)
+            self.joint_state_publisher.publish(js)
+            rospy.sleep(1)
+            target_angles = calculate_inverse_kinematics([-0.30, -0.45, 0.17, 0, 0, 3.14/2], target_angles)
+            print("step 6", target_angles)
+            js.position = target_angles
 
             self.joint_state_publisher.publish(js)
             # self.pose_publisher.publish(target_pose_message)
