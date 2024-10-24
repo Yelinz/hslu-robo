@@ -6,9 +6,6 @@ import std_msgs
 import vision
 import rospy
 
-# genai.configure(api_key=)
-# model = genai.GenerativeModel("gemini-1.5-flash")
-
 public_emotion_publisher = None
 public_say_publisher = None
 public_recognize_proxy = None
@@ -29,7 +26,7 @@ def play(object_list, emotion_publisher, say_publisher, recognize_proxy) -> str:
 
     user_success = False
     while not user_success:    
-        user_response = get_user_response() # z.b. ist es ein rundes objekt
+        user_response = hear() # z.b. ist es ein rundes objekt
 
         if user_response == "exit":
             break
@@ -40,22 +37,24 @@ def play(object_list, emotion_publisher, say_publisher, recognize_proxy) -> str:
             speak(success_text)
             break
 
-        question_mark = '?'
-        prompt = f'We are playing I spy. Answer the following question about the object "{selected_item}" with only "Yes" or "No": {user_response.strip(question_mark)}{question_mark}'
+        prompt = f'We are playing I spy. You are the spy and have chosen "{selected_item}". Answer the following question about "{selected_item}" with only "Yes" or "No". If it does not make sense reponsed with "Ask a question". QUESTION: {user_response}'
         llm_reponse = get_llm_response(prompt)
         rospy.loginfo(f"llm response {llm_reponse}")
         speak(llm_reponse)
-        rospy.sleep(60)
+        rospy.sleep(2)
 
 def play_reverse():
-    question = get_user_response()
+    question = hear()
 
     while True:
         availble_objects = vision.get_objects()
-        prompt = f'We are playing I spy'
+        prompt = f'We are playing I spy. You are the guesser. The hint is: "{question}". The objects you see are: {", ".join(availble_objects)}'
         llm_reponse = get_llm_response(prompt)
-        answer = get_user_response()
-        sleep(5)
+        speak(llm_reponse)
+        answer = hear()
+        if "correct" in answer.lower():
+            break
+        rospy.sleep(60)
 
 def speak(say: str) -> None:
     global public_emotion_publisher
@@ -64,19 +63,21 @@ def speak(say: str) -> None:
     public_emotion_publisher.publish(std_msgs.msg.String('QT/talking'))
     public_say_publisher.publish(std_msgs.msg.String(say))
 
-    pass
-
 # hear
-def get_user_response() -> str:
+def hear() -> str:
     global public_recognize_proxy
 
-    resp = public_recognize_proxy("en_US", [], 20)
-    rospy.loginfo(f"hear {resp.transcript}")
-    return str(resp.transcript)
+    transcript = ''
+
+    while transcript == '':
+        resp = public_recognize_proxy("en_US", [], 20)
+        transcript = resp.transcript
+
+    rospy.loginfo(f"hear {transcript}")
+    return str(transcript)
 
 def get_llm_response(prompt: str) -> str:
-    # return model.generate_content(prompt).candidates[0].content.parts[0].text
-    KEY = '<<enter key>>'
+    KEY = '<<enter your key>>'
     # KEY = os.environ["API_KEY"]
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={KEY}"
     headers = { 'Content-Type': 'application/json' }
