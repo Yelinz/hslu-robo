@@ -1,104 +1,86 @@
 import random
-import os
-import json
-import requests
-import std_msgs
-import vision
 import rospy
 
-public_emotion_publisher = None
-public_say_publisher = None
-public_recognize_proxy = None
+def test(robot_interaction) -> None:
+    rospy.loginfo("SPEAK")
+    robot_interaction.feel("talking")
+    robot_interaction.speak("HELLO THIS IS A TEST INPUT TO TEST THE WAIT LOGIC USING THE SERVICE PROXY")
+    rospy.loginfo("DONE")
+    robot_interaction.feel("happy")
 
-def play(object_list, emotion_publisher, say_publisher, recognize_proxy) -> str:
-    global public_emotion_publisher
-    global public_say_publisher
-    global public_recognize_proxy
-    public_emotion_publisher = emotion_publisher
-    public_say_publisher = say_publisher
-    public_recognize_proxy = recognize_proxy
-
+def play(robot_interaction) -> str:
+    object_list = robot_interaction.get_objects()
     selected_item = random.choice(object_list)
-    first_letter = selected_item[0]
+    rospy.loginfo(f"hidden word: {selected_item}")
+    first_letter = selected_item[0].lower()
+    robot_interaction.feel("talking")
     question = f'I spy with my little eye something beginning with "{first_letter}".'
-    speak(question)
-    rospy.sleep(5)
+    robot_interaction.speak(question)
 
-    user_success = False
-    while not user_success:    
-        user_response = hear() # z.b. ist es ein rundes objekt
-
-        if user_response == "exit":
+    while True:    
+        user_response = robot_interaction.hear() # z.b. ist es ein rundes objekt
+        
+        if "give up" in user_response:
+            robot_interaction.feel("angry")
+            text = f'Ok you give up, the word was: {selected_item}'
+            robot_interaction.speak(text)
             break
 
-        if selected_item.lower() in user_response.lower():
-            user_success = True
+        if selected_item in user_response:
+            robot_interaction.feel("happy")
             success_text = f'Congrats, you have guessed the word correctly: {selected_item}'
-            speak(success_text)
+            robot_interaction.speak(success_text)
             break
 
-        prompt = f'We are playing I spy. You are the spy and have chosen "{selected_item}". Answer the following question about "{selected_item}" with only "Yes" or "No". If it does not make sense reponsed with "Ask a question". QUESTION: {user_response}'
-        llm_reponse = get_llm_response(prompt)
-        rospy.loginfo(f"llm response {llm_reponse}")
-        speak(llm_reponse)
-        rospy.sleep(2)
+        prompt = f'Return a plain text response. We are playing I spy. You are the spy and have chosen "{selected_item}". Answer the following question about "{selected_item}" with only "Yes" or "No". If it does not make sense reponsed with "Ask a question". QUESTION: {user_response}'
+        llm_reponse = robot_interaction.get_llm_response(prompt)
+        robot_interaction.feel("talking")
+        robot_interaction.speak(llm_reponse)
 
-def play_reverse():
-    question = hear()
+def play_reverse(robot_interaction):
+    question = robot_interaction.hear()
 
+    interactions = []
+    availble_objects = robot_interaction.get_objects()
+    tries = len(availble_objects)
+    for i in range(tries):
+        if i >= tries - 1:
+            robot_interaction.feel("angry")
+            robot_interaction.speak("I give up I do not know.")
+            continue
+
+        prompt = f'Return a plain text response. We are playing I spy. You are the guesser. The hint is: "{question}". The objects you see are: {", ".join(availble_objects)}.'
+        if len(interactions):
+            prompt += f' Your past guesses and their answers are: {", ".join(interactions)}'
+        llm_reponse = robot_interaction.get_llm_response(prompt)
+        robot_interaction.feel("talking")
+        robot_interaction.speak(llm_reponse)
+
+        answer = robot_interaction.hear()
+        if "correct" in answer:
+            break
+        interactions.append((prompt, answer))
+
+
+def start(interactions):
     while True:
-        availble_objects = vision.get_objects()
-        prompt = f'We are playing I spy. You are the guesser. The hint is: "{question}". The objects you see are: {", ".join(availble_objects)}'
-        llm_reponse = get_llm_response(prompt)
-        speak(llm_reponse)
-        answer = hear()
-        if "correct" in answer.lower():
+        play(interactions)
+
+        interactions.feel("talking")
+        interactions.speak("Do you want to play again?")
+        resp = interactions.hear()        
+        if "no" in resp:
             break
-        rospy.sleep(60)
 
-def speak(say: str) -> None:
-    global public_emotion_publisher
-    global public_say_publisher
+        interactions.feel("talking")
+        interactions.speak("Now you are the spy and I am the guesser.")
+        play_reverse(interactions)
 
-    public_emotion_publisher.publish(std_msgs.msg.String('QT/talking'))
-    public_say_publisher.publish(std_msgs.msg.String(say))
+        interactions.feel("talking")
+        interactions.speak("Do you want to play again?")
+        resp = interactions.hear()        
+        if "no" in resp:
+            break
 
-# hear
-def hear() -> str:
-    global public_recognize_proxy
-
-    transcript = ''
-
-    while transcript == '':
-        resp = public_recognize_proxy("en_US", [], 20)
-        transcript = resp.transcript
-
-    rospy.loginfo(f"hear {transcript}")
-    return str(transcript)
-
-def get_llm_response(prompt: str) -> str:
-    KEY = '<<enter your key>>'
-    # KEY = os.environ["API_KEY"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={KEY}"
-    headers = { 'Content-Type': 'application/json' }
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        response.raise_for_status()
-        response_json = response.json()
-        return response_json["candidates"][0]["content"]["parts"][0]["text"]
-    except requests.exceptions.RequestException as e:
-        rospy.loginfo(e)
-        return ""
-
-
-def pause() -> None:
-    pass
-
-# if __name__ == "__main__":
-#     play(['Apple', 'Pineapple', 'Car', 'House', 'Human', 'Dog', 'Bot'])
+    interactions.feel("sad")
+    interactions.speak("Thank you for playing!")
