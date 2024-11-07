@@ -25,8 +25,16 @@ class DifferentialSteering:
         right_msg = rospy.wait_for_message(left_wheel_tick_topic, WheelEncoderStamped)
         self.left_tick_count = left_msg.data
         self.right_tick_count = right_msg.data
+        self.initial_left_tick = left_msg.data
+        self.initial_right_tick = right_msg.data
+
+        print('init right', self.initial_right_tick)
+
         self.left_resolution = left_msg.resolution
         self.right_resolution = right_msg.resolution
+        self.initial_left_resolution = left_msg.resolution
+        self.initial_right_resolution = right_msg.resolution
+        
         self.axis_width = 10
         self.x = 0
         self.y = 0
@@ -46,10 +54,14 @@ class DifferentialSteering:
     def callback_left_wheel_tick(self, data):
         #rospy.loginfo_throttle(1, f"left: {self.left_tick_count}")
         self.left_tick_count = data.data
+        self.calc_pose()
+        self.publish_transform(self.x, self.y, self.angle)
     
     def callback_right_wheel_tick(self, data):
         #rospy.loginfo_throttle(1, f"right: {self.right_tick_count}")
         self.right_tick_count = data.data
+        self.calc_pose()
+        self.publish_transform(self.x, self.y, self.angle)
 
     def ticks_to_pose(self, left_ticks, right_ticks):
         return
@@ -60,6 +72,7 @@ class DifferentialSteering:
         target_x = 10
         target_y = 0
         target_angle = 0
+
         while not rospy.is_shutdown():
             # TODO Backwards
             """
@@ -94,6 +107,8 @@ class DifferentialSteering:
             self.angle += (distance_left-distance_right)/(2*self.axis_width) # theta
             self.x += distance*math.cos(self.angle)
             self.y += distance*math.sin(self.angle)
+            velocity_x = 0
+            velocity_y = 0
 
             rospy.loginfo_throttle(0.2, f"x: {self.x}, y: {self.y}, theta: {self.angle}")
         
@@ -123,20 +138,21 @@ class DifferentialSteering:
         self.transform_broadcaster.sendTransform(t)
 
     def calc_pose(self) -> None:
+        print('left tick', self.left_tick_count - self.initial_left_tick)
+        print('right tick', self.right_tick_count - self.initial_right_tick)
+
         # calculating wheel displacements
-        distance_travelled_left_wheel = (2*math.pi*self.radius*self.left_tick_count) / self.left_resolution
-        distance_travelled_right_wheel = (2*math.pi*self.radius*self.right_tick_count) / self.right_resolution
+        distance_travelled_left_wheel = (2*math.pi*self.radius*(self.left_tick_count - self.initial_left_tick)) / self.left_resolution
+        distance_travelled_right_wheel = (2*math.pi*self.radius*(self.right_tick_count - self.initial_right_tick)) / self.right_resolution
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
         delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / self.axis_width
 
         # updating the pose
-        self.x = self.x + displacement * math.cos(self.theta + (delta_theta/2))
-        self.y = self.y + displacement * math.sin(self.theta + (delta_theta/2))
-        self.theta = self.theta + delta_theta
-
-        
+        self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2))
+        self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2))
+        self.angle = self.angle + delta_theta
 
 if __name__ == '__main__':
     robot_name = "lamda"
