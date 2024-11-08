@@ -2,10 +2,12 @@
 
 import rospy
 import math
+import numpy as np
 import tf2_ros as tf
 
 import geometry_msgs.msg
 from duckietown_msgs.msg import WheelsCmdStamped, WheelEncoderStamped
+from std_msgs.msg import Header
 from tf.transformations import quaternion_from_euler
 
 class DifferentialSteering:
@@ -23,21 +25,22 @@ class DifferentialSteering:
         right_wheel_tick_topic = '/' + robot_name + '/right_wheel_encoder_node/tick'
         left_msg = rospy.wait_for_message(left_wheel_tick_topic, WheelEncoderStamped)
         right_msg = rospy.wait_for_message(right_wheel_tick_topic, WheelEncoderStamped)
+        # Tick to position variables
+        self.left_resolution = left_msg.resolution
+        self.right_resolution = right_msg.resolution
         self.initial_left_tick = left_msg.data
         self.initial_right_tick = right_msg.data
         self.left_tick_count = self.initial_left_tick
         self.right_tick_count = self.initial_right_tick
         self.prev_left_tick = 0
         self.prev_right_tick = 0
-
-        self.left_resolution = left_msg.resolution
-        self.right_resolution = right_msg.resolution
-        
-        self.axis_width = 10
+        # Constants
+        self.axis_width = 0.08
+        self.radius = 0.1
+        # Calculated position
         self.x = 0
         self.y = 0
         self.angle = 0
-        self.radius = 5
 
         rospy.Subscriber(left_wheel_tick_topic, WheelEncoderStamped, self.callback_left_wheel_tick)
         rospy.Subscriber(right_wheel_tick_topic, WheelEncoderStamped, self.callback_right_wheel_tick)
@@ -49,73 +52,72 @@ class DifferentialSteering:
        
 
     def callback_left_wheel_tick(self, data):
-        #rospy.loginfo_throttle(1, f"left: {self.left_tick_count}")
         self.left_tick_count = data.data
         self.calc_pose()
         self.publish_transform(self.x, self.y, self.angle)
     
     def callback_right_wheel_tick(self, data):
-        #rospy.loginfo_throttle(1, f"right: {self.right_tick_count}")
         self.right_tick_count = data.data
         self.calc_pose()
         self.publish_transform(self.x, self.y, self.angle)
 
-    def ticks_to_pose(self, left_ticks, right_ticks):
-        return
-
-    def turn_wheels(self, velocity):
-        self.command.vel_left = velocity
-        self.command.vel_right = -velocity*0.5
-
-        self.command.header.stamp = rospy.Time.now()
-        self.publisher.publish(self.command)
-        rospy.loginfo("Publishing wheel command")
+    def turn_wheels(self, velocity_left=0, velocity_right=0):
+        command = WheelsCmdStamped()
+        command.header = Header()
+        command.vel_left = velocity_left
+        command.vel_right = velocity_right
+        command.header.stamp = rospy.Time.now()
+        self.wheel_command_publisher.publish(command)
 
     def run(self):
-        prev_left = self.left_tick_count
-        prev_right = self.right_tick_count
-        target_x = 10
-        target_y = 0
-        target_angle = 0
+        self.turn_wheels()
+        x_end = 1
+        y_end = 1
+        theta_end = 3.14/2
 
+        velocity_max = 2
+        angular_velocity_max = 1
+
+        distance = np.sqrt((x_end-self.x)**2 + (y_end-self.y)**2)
+        delta_theta = theta_end -self.angle 
+
+        t_linear = distance / velocity_max
+        t_angular = delta_theta / angular_velocity_max
+
+        estimated_time = 1
+
+        velocity = distance / estimated_time
+        angular_velocity = delta_theta / estimated_time
+
+        wheel_offset = ((angular_velocity*self.axis_width) / 2)
+        target_velocity_left = velocity - wheel_offset
+        target_velocity_right = velocity + wheel_offset
+    
+        self.turn_wheels(target_velocity_left, target_velocity_right)
+        rospy.sleep(estimated_time)
+        self.turn_wheels()
         while not rospy.is_shutdown():
-            # TODO Backwards
-            """
-            left_delta = self.left_tick_count - prev_left
-            right_delta = self.right_tick_count - prev_right
-
-            prev_left = self.left_tick_count
-            prev_right = self.right_tick_count
-
-            if (left_delta - right_delta <= 2):
-                x += left_delta * math.cos(heading)
-                y += right_delta * math.sin(heading)
-                rospy.loginfo_throttle(0.2, f"x: {x}, y: {y}, theta: {heading}")
-                continue
-
-            R = axis_width * (left_delta + right_delta) / (2 * (right_delta - left_delta))
-            wd = (right_delta - left_delta) / axis_width
-
-            x_t = R * math.sin(wd + heading) - R * math.sin(heading)
-            y_t = R * math.cos(wd + heading) + R * math.cos(heading)
-            x += x_t
-            y -= y_t
-            heading += (x_t - left_delta) / axis_width
-            # TODO fix angle calculation, then it should work
-            # https://robotics.stackexchange.com/questions/1653/calculate-position-of-differential-drive-robot?rq=1
-            # https://rossum.sourceforge.net/papers/DiffSteer/
-
-            distance_left = self.radius*self.angle # s_L
-            distance_right = (self.radius+self.axis_width*self.angle) # s_R
-            distance = (distance_left+distance_right)/2 # s overline
-            self.angle += (distance_left-distance_right)/(2*self.axis_width) # theta
-            self.x += distance*math.cos(self.angle)
-            self.y += distance*math.sin(self.angle)
-            velocity_x = 0
-            velocity_y = 0
-            """
-
+            self.turn_wheels()
             rospy.loginfo_throttle(0.2, f"x: {self.x}, y: {self.y}, theta: {self.angle}")
+            """
+            if abs(x_end - self.x) < 0.001 and abs(y_end-self.y) < 0.001:
+                break
+            distance = np.sqrt((x_end-self.x)**2 + (y_end-self.y)**2)
+            delta_theta = theta_end -self.angle 
+
+            t_linear = distance / velocity_max
+            t_angular = delta_theta / angular_velocity_max
+
+            estimated_time = 1 
+
+            wheel_offset = ((angular_velocity*self.axis_width) / 2)
+            target_velocity_left = velocity - wheel_offset
+            target_velocity_right = velocity + wheel_offset
+            self.turn_wheels(target_velocity_left, target_velocity_right)
+
+            rospy.sleep(estimated_time)
+            """
+        self.turn_wheels()
         
     def publish_transform(self, x, y, theta):
         """publishes a transform between the map frame and the robot_name/base frame
@@ -152,11 +154,11 @@ class DifferentialSteering:
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
-        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / self.axis_width
+        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / (2*self.axis_width)
 
         # updating the pose
-        self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2)) /100
-        self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2)) /100
+        self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2))
+        self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2))
         self.angle = self.angle + delta_theta
         self.prev_left_tick += left_tick
         self.prev_right_tick += right_tick
