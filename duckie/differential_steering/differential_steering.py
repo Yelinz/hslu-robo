@@ -22,25 +22,22 @@ class DifferentialSteering:
         left_wheel_tick_topic = '/' + robot_name + '/left_wheel_encoder_node/tick'
         right_wheel_tick_topic = '/' + robot_name + '/right_wheel_encoder_node/tick'
         left_msg = rospy.wait_for_message(left_wheel_tick_topic, WheelEncoderStamped)
-        right_msg = rospy.wait_for_message(left_wheel_tick_topic, WheelEncoderStamped)
-        self.left_tick_count = left_msg.data
-        self.right_tick_count = right_msg.data
+        right_msg = rospy.wait_for_message(right_wheel_tick_topic, WheelEncoderStamped)
         self.initial_left_tick = left_msg.data
         self.initial_right_tick = right_msg.data
-
-        print('init right', self.initial_right_tick)
+        self.left_tick_count = self.initial_left_tick
+        self.right_tick_count = self.initial_right_tick
+        self.prev_left_tick = 0
+        self.prev_right_tick = 0
 
         self.left_resolution = left_msg.resolution
         self.right_resolution = right_msg.resolution
-        self.initial_left_resolution = left_msg.resolution
-        self.initial_right_resolution = right_msg.resolution
         
         self.axis_width = 10
         self.x = 0
         self.y = 0
         self.angle = 0
         self.radius = 5
-        print(self.left_resolution)
 
         rospy.Subscriber(left_wheel_tick_topic, WheelEncoderStamped, self.callback_left_wheel_tick)
         rospy.Subscriber(right_wheel_tick_topic, WheelEncoderStamped, self.callback_right_wheel_tick)
@@ -96,7 +93,6 @@ class DifferentialSteering:
             x += x_t
             y -= y_t
             heading += (x_t - left_delta) / axis_width
-            """
             # TODO fix angle calculation, then it should work
             # https://robotics.stackexchange.com/questions/1653/calculate-position-of-differential-drive-robot?rq=1
             # https://rossum.sourceforge.net/papers/DiffSteer/
@@ -109,6 +105,7 @@ class DifferentialSteering:
             self.y += distance*math.sin(self.angle)
             velocity_x = 0
             velocity_y = 0
+            """
 
             rospy.loginfo_throttle(0.2, f"x: {self.x}, y: {self.y}, theta: {self.angle}")
         
@@ -138,22 +135,25 @@ class DifferentialSteering:
         self.transform_broadcaster.sendTransform(t)
 
     def calc_pose(self) -> None:
-        rospy.loginfo_throttle(0.2, f"init left: {self.initial_left_tick}, init right: {self.initial_right_tick}, left: {self.left_tick_count}, right: {self.right_tick_count}")
-        left_tick = self.left_tick_count - self.initial_left_tick
-        right_tick = self.right_tick_count - self.initial_right_tick
+        left_tick = self.left_tick_count - self.initial_left_tick - self.prev_left_tick
+        right_tick = self.right_tick_count - self.initial_right_tick - self.prev_right_tick
 
         # calculating wheel displacements
         distance_travelled_left_wheel = (2*math.pi*self.radius*left_tick) / self.left_resolution
         distance_travelled_right_wheel = (2*math.pi*self.radius*right_tick) / self.right_resolution
+        #distance_travelled_left_wheel = left_tick / self.left_resolution
+        #distance_travelled_right_wheel = right_tick / self.right_resolution
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
         delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / self.axis_width
 
         # updating the pose
-        self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2))
-        self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2))
+        self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2)) /100
+        self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2)) /100
         self.angle = self.angle + delta_theta
+        self.prev_left_tick += left_tick
+        self.prev_right_tick += right_tick
 
 if __name__ == '__main__':
     robot_name = "lamda"
