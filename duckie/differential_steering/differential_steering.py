@@ -63,6 +63,14 @@ class DifferentialSteering:
     def ticks_to_pose(self, left_ticks, right_ticks):
         return
 
+    def turn_wheels(self, velocity):
+        self.command.vel_left = velocity
+        self.command.vel_right = -velocity*0.5
+
+        self.command.header.stamp = rospy.Time.now()
+        self.publisher.publish(self.command)
+        rospy.loginfo("Publishing wheel command")
+
     def run(self):
         prev_left = self.left_tick_count
         prev_right = self.right_tick_count
@@ -141,8 +149,6 @@ class DifferentialSteering:
         # calculating wheel displacements
         distance_travelled_left_wheel = (2*math.pi*self.radius*left_tick) / self.left_resolution
         distance_travelled_right_wheel = (2*math.pi*self.radius*right_tick) / self.right_resolution
-        #distance_travelled_left_wheel = left_tick / self.left_resolution
-        #distance_travelled_right_wheel = right_tick / self.right_resolution
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
