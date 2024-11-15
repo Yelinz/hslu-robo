@@ -35,8 +35,9 @@ class DifferentialSteering:
         self.prev_left_tick = 0
         self.prev_right_tick = 0
         # Constants
-        self.axis_width = 0.08
-        self.radius = 0.1
+        self.axis_width = 0.1
+        self.radius = 0.0318
+        self.max_speed = 0.5
         # Calculated position
         self.x = 0
         self.y = 0
@@ -69,54 +70,104 @@ class DifferentialSteering:
         command.header.stamp = rospy.Time.now()
         self.wheel_command_publisher.publish(command)
 
+    def set_wheel_speeds(self, left_speed, right_speed):
+        """
+        Set speeds for left and right wheels. Replace this with actual motor commands.
+        """
+        self.turn_wheels(left_speed, right_speed)
+
+    def get_current_position_and_orientation(self):
+        """
+        Get the current position (x, y) and orientation (theta) of the robot.
+        Replace this with actual code to read the robot’s odometry or localization data.
+        """
+        self.calc_pose()
+        return self.x, self.y, self.angle
+
+
+    def rotate_to_angle(self, target_angle, tolerance=0.05):
+        """
+        Rotate the robot to face a specific target angle.
+        """
+        while True:
+            _, _, theta = self.get_current_position_and_orientation()
+            angle_difference = target_angle - theta
+
+            # Normalize the angle to be within -pi to +pi
+            angle_difference = math.atan2(math.sin(angle_difference), math.cos(angle_difference))
+
+            # Check if within tolerance
+            if abs(angle_difference) < tolerance:
+                self.set_wheel_speeds(0, 0)
+                break
+
+            # Rotate in place: if angle difference is positive, turn right; else, turn left
+            rotation_speed = self.max_speed if angle_difference > 0 else -self.max_speed
+            self.set_wheel_speeds(rotation_speed, -rotation_speed)
+            rospy.sleep(0.1)
+
+    def move_to_point(self, target_x, target_y, tolerance=0.1):
+        """
+        Move the robot from its current position to a target point (target_x, target_y).
+        """
+        while True:
+            # Get current position and orientation
+            x, y, theta = self.get_current_position_and_orientation()
+
+            # Calculate distance and angle to the target
+            distance_to_target = math.sqrt((target_x - x)**2 + (target_y - y)**2)
+            target_angle = math.atan2(target_y - y, target_x - x)
+
+            # Check if we have reached the target within tolerance
+            if distance_to_target < tolerance:
+                self.set_wheel_speeds(0, 0)
+                print("Reached the target!")
+                break
+
+            # Rotate to face the target angle
+            self.rotate_to_angle(target_angle)
+
+            # Move forward once aligned
+            move_speed = min(self.max_speed, distance_to_target)
+            self.set_wheel_speeds(move_speed, move_speed)
+
+            # Small delay to allow for control updates
+            rospy.sleep(0.1)
+
     def run(self):
         self.turn_wheels()
         x_end = 1
         y_end = 1
         theta_end = 3.14/2
 
-        velocity_max = 2
-        angular_velocity_max = 1
-
-        distance = np.sqrt((x_end-self.x)**2 + (y_end-self.y)**2)
-        delta_theta = theta_end -self.angle 
-
-        t_linear = distance / velocity_max
-        t_angular = delta_theta / angular_velocity_max
-
-        estimated_time = 1
-
-        velocity = distance / estimated_time
-        angular_velocity = delta_theta / estimated_time
-
-        wheel_offset = ((angular_velocity*self.axis_width) / 2)
-        target_velocity_left = velocity - wheel_offset
-        target_velocity_right = velocity + wheel_offset
-    
-        self.turn_wheels(target_velocity_left, target_velocity_right)
-        rospy.sleep(estimated_time)
-        self.turn_wheels()
+        self.move_to_point(x_end, y_end)
+        """
         while not rospy.is_shutdown():
-            self.turn_wheels()
-            rospy.loginfo_throttle(0.2, f"x: {self.x}, y: {self.y}, theta: {self.angle}")
-            """
-            if abs(x_end - self.x) < 0.001 and abs(y_end-self.y) < 0.001:
-                break
-            distance = np.sqrt((x_end-self.x)**2 + (y_end-self.y)**2)
-            delta_theta = theta_end -self.angle 
+            rospy.loginfo_throttle(0.1, f"start x: {self.x}, y: {self.y}, theta: {self.angle}")
+            
 
-            t_linear = distance / velocity_max
-            t_angular = delta_theta / angular_velocity_max
+        #self.turn_wheels(target_velocity_left, target_velocity_right)
+        #rospy.sleep(estimated_time)
+        #self.turn_wheels(0.5, 0.6)
+        #rospy.sleep(2)
 
-            estimated_time = 1 
+        angle_end = math.atan2(y_end, x_end)
+        rospy.loginfo(f"start x: {self.x}, y: {self.y}, theta: {self.angle}, end: {angle_end}")
 
-            wheel_offset = ((angular_velocity*self.axis_width) / 2)
-            target_velocity_left = velocity - wheel_offset
-            target_velocity_right = velocity + wheel_offset
-            self.turn_wheels(target_velocity_left, target_velocity_right)
+        delta_angle = self.angle - angle_end
+        delta_time = abs(delta_angle) / (0.2 / (self.axis_width))
 
-            rospy.sleep(estimated_time)
-            """
+        self.turn_wheels()
+        vel = 0.2
+        sign = np.sign(delta_angle)
+        self.turn_wheels(sign*vel, -1*sign*vel)
+        rospy.sleep(delta_time)
+
+        self.turn_wheels()
+        self.publish_transform(self.x, self.y, self.angle)
+        rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}, end: {angle_end}, sign: {sign} time {delta_time}")
+        """
+        rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
         self.turn_wheels()
         
     def publish_transform(self, x, y, theta):
@@ -154,12 +205,15 @@ class DifferentialSteering:
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
-        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / (2*self.axis_width)
+        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / (1*self.axis_width)
 
         # updating the pose
         self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2))
         self.y = self.y + displacement * math.sin(self.angle + (delta_theta/2))
-        self.angle = self.angle + delta_theta
+        # self.angle = (self.angle + delta_theta) % 2*math.pi
+        # self.angle = self.angle + delta_theta
+        a = self.angle + delta_theta
+        self.angle = np.arctan2(np.sin(a), np.cos(a))
         self.prev_left_tick += left_tick
         self.prev_right_tick += right_tick
 
