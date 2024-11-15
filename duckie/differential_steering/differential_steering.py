@@ -37,7 +37,7 @@ class DifferentialSteering:
         # Constants
         self.axis_width = 0.1
         self.radius = 0.0318
-        self.max_speed = 0.5
+        self.max_speed = 0.2
         # Calculated position
         self.x = 0
         self.y = 0
@@ -70,27 +70,13 @@ class DifferentialSteering:
         command.header.stamp = rospy.Time.now()
         self.wheel_command_publisher.publish(command)
 
-    def set_wheel_speeds(self, left_speed, right_speed):
-        """
-        Set speeds for left and right wheels. Replace this with actual motor commands.
-        """
-        self.turn_wheels(left_speed, right_speed)
-
-    def get_current_position_and_orientation(self):
-        """
-        Get the current position (x, y) and orientation (theta) of the robot.
-        Replace this with actual code to read the robot’s odometry or localization data.
-        """
-        self.calc_pose()
-        return self.x, self.y, self.angle
-
 
     def rotate_to_angle(self, target_angle, tolerance=0.05):
         """
         Rotate the robot to face a specific target angle.
         """
         while True:
-            _, _, theta = self.get_current_position_and_orientation()
+            theta = self.angle
             angle_difference = target_angle - theta
 
             # Normalize the angle to be within -pi to +pi
@@ -98,12 +84,14 @@ class DifferentialSteering:
 
             # Check if within tolerance
             if abs(angle_difference) < tolerance:
-                self.set_wheel_speeds(0, 0)
+                self.turn_wheels(0, 0)
                 break
 
             # Rotate in place: if angle difference is positive, turn right; else, turn left
             rotation_speed = self.max_speed if angle_difference > 0 else -self.max_speed
-            self.set_wheel_speeds(rotation_speed, -rotation_speed)
+            self.turn_wheels(rotation_speed, -1*rotation_speed)
+
+            delta_time = abs(angle_difference) / (0.2 / (self.axis_width))
             rospy.sleep(0.1)
 
     def move_to_point(self, target_x, target_y, tolerance=0.1):
@@ -112,7 +100,8 @@ class DifferentialSteering:
         """
         while True:
             # Get current position and orientation
-            x, y, theta = self.get_current_position_and_orientation()
+            x = self.x
+            y = self.y
 
             # Calculate distance and angle to the target
             distance_to_target = math.sqrt((target_x - x)**2 + (target_y - y)**2)
@@ -120,7 +109,7 @@ class DifferentialSteering:
 
             # Check if we have reached the target within tolerance
             if distance_to_target < tolerance:
-                self.set_wheel_speeds(0, 0)
+                self.turn_wheels(0, 0)
                 print("Reached the target!")
                 break
 
@@ -128,9 +117,10 @@ class DifferentialSteering:
             self.rotate_to_angle(target_angle)
 
             # Move forward once aligned
-            move_speed = min(self.max_speed, distance_to_target)
-            self.set_wheel_speeds(move_speed, move_speed)
+            move_speed = max(self.max_speed, distance_to_target)
+            self.turn_wheels(move_speed, move_speed)
 
+            rospy.loginfo(f'x: {x}, y: {y}, distance: {distance_to_target}, target angle: {target_angle}, speed: {move_speed}')
             # Small delay to allow for control updates
             rospy.sleep(0.1)
 
@@ -138,7 +128,7 @@ class DifferentialSteering:
         self.turn_wheels()
         x_end = 1
         y_end = 1
-        theta_end = 3.14/2
+        # theta_end = 3.14/2
 
         self.move_to_point(x_end, y_end)
         """
