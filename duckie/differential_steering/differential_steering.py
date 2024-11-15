@@ -37,7 +37,7 @@ class DifferentialSteering:
         # Constants
         self.axis_width = 0.1
         self.radius = 0.0318
-        self.max_speed = 0.2
+        self.max_speed = 0.3
         # Calculated position
         self.x = 0
         self.y = 0
@@ -71,13 +71,12 @@ class DifferentialSteering:
         self.wheel_command_publisher.publish(command)
 
 
-    def rotate_to_angle(self, target_angle, tolerance=0.05):
+    def rotate_to_angle(self, target_angle, tolerance=0.08):
         """
         Rotate the robot to face a specific target angle.
         """
-        while True:
-            theta = self.angle
-            angle_difference = target_angle - theta
+        while not rospy.is_shutdown():
+            angle_difference = self.angle - target_angle
 
             # Normalize the angle to be within -pi to +pi
             angle_difference = math.atan2(math.sin(angle_difference), math.cos(angle_difference))
@@ -85,20 +84,33 @@ class DifferentialSteering:
             # Check if within tolerance
             if abs(angle_difference) < tolerance:
                 self.turn_wheels(0, 0)
+                rospy.sleep(0.1)
                 break
 
             # Rotate in place: if angle difference is positive, turn right; else, turn left
-            rotation_speed = self.max_speed if angle_difference > 0 else -self.max_speed
-            self.turn_wheels(rotation_speed, -1*rotation_speed)
+            if angle_difference > 0:
+                self.turn_wheels(self.max_speed*1.5, -self.max_speed)
+            else:
+                self.turn_wheels(-self.max_speed, self.max_speed*1.5)
 
-            delta_time = abs(angle_difference) / (0.2 / (self.axis_width))
-            rospy.sleep(0.1)
+            """
+            delta_time = abs(angle_difference) / (0.3 / (self.axis_width))
+            rospy.loginfo(f'angle {self.angle} differience: {angle_difference}, target angle: {target_angle}')
+            rospy.sleep(delta_time)
+            self.turn_wheels(0, 0)
+            """
+            rospy.loginfo(f'angle {self.angle} differience: {angle_difference}, target angle: {target_angle}')
+            rospy.sleep(0.01)
+            """
+            self.turn_wheels(0, 0)
+            rospy.sleep(0.15)
+            """
 
-    def move_to_point(self, target_x, target_y, tolerance=0.1):
+    def move_to_point(self, target_x, target_y, tolerance=0.05):
         """
         Move the robot from its current position to a target point (target_x, target_y).
         """
-        while True:
+        while not rospy.is_shutdown():
             # Get current position and orientation
             x = self.x
             y = self.y
@@ -117,40 +129,44 @@ class DifferentialSteering:
             self.rotate_to_angle(target_angle)
 
             # Move forward once aligned
-            move_speed = max(self.max_speed, distance_to_target)
+            move_speed = min(self.max_speed, distance_to_target)
             self.turn_wheels(move_speed, move_speed)
 
-            rospy.loginfo(f'x: {x}, y: {y}, distance: {distance_to_target}, target angle: {target_angle}, speed: {move_speed}')
+            rospy.loginfo(f'distance: {distance_to_target}, target angle: {target_angle}, speed: {move_speed}')
             # Small delay to allow for control updates
             rospy.sleep(0.1)
 
     def run(self):
         self.turn_wheels()
-        x_end = 1
-        y_end = 1
-        # theta_end = 3.14/2
+        x_end = 0.5
+        y_end = 0
+        theta_end = 3.14
 
-        self.move_to_point(x_end, y_end)
+        self.move_to_point(0.5, 0)
+        self.move_to_point(-0, 0)
         """
+        self.rotate_to_angle(theta_end)
+        self.move_to_point(x_end, y_end)
+        self.turn_wheels(0.1, 0.1)
         while not rospy.is_shutdown():
             rospy.loginfo_throttle(0.1, f"start x: {self.x}, y: {self.y}, theta: {self.angle}")
-            
 
         #self.turn_wheels(target_velocity_left, target_velocity_right)
         #rospy.sleep(estimated_time)
         #self.turn_wheels(0.5, 0.6)
         #rospy.sleep(2)
 
-        angle_end = math.atan2(y_end, x_end)
+        # angle_end = math.atan2(y_end, x_end)
+        angle_end = theta_end
         rospy.loginfo(f"start x: {self.x}, y: {self.y}, theta: {self.angle}, end: {angle_end}")
 
         delta_angle = self.angle - angle_end
-        delta_time = abs(delta_angle) / (0.2 / (self.axis_width))
+        delta_time = abs(delta_angle) / (0.1 / (self.axis_width))
 
         self.turn_wheels()
         vel = 0.2
         sign = np.sign(delta_angle)
-        self.turn_wheels(sign*vel, -1*sign*vel)
+        self.turn_wheels(sign*vel, -1*sign*vel*1.2)
         rospy.sleep(delta_time)
 
         self.turn_wheels()
@@ -195,7 +211,7 @@ class DifferentialSteering:
 
         # calculating robot's linear and angular displacements
         displacement = (distance_travelled_left_wheel + distance_travelled_right_wheel) / 2
-        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / (1*self.axis_width)
+        delta_theta = (distance_travelled_right_wheel - distance_travelled_left_wheel) / self.axis_width
 
         # updating the pose
         self.x = self.x + displacement * math.cos(self.angle + (delta_theta/2))
@@ -206,6 +222,7 @@ class DifferentialSteering:
         self.angle = np.arctan2(np.sin(a), np.cos(a))
         self.prev_left_tick += left_tick
         self.prev_right_tick += right_tick
+        rospy.loginfo_throttle(0.2, f'x {self.x} y {self.y} angle {self.angle}')
 
 if __name__ == '__main__':
     robot_name = "lamda"
