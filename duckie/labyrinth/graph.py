@@ -47,6 +47,16 @@ class Graph:
 
         self.vertices.add(from_vertex)
         self.vertices.add(to_vertex)
+    
+    def apply_edges(self, vertices, matrix):
+        self.vertices = vertices
+
+        for from_vertex_i, to_list in enumerate(matrix):
+            for to_vertex_i, weight in enumerate(to_list):
+                if weight == 0:
+                    continue
+
+                self.edges.append(Edge(vertices[from_vertex_i], vertices[to_vertex_i], weight))
 
     def unvisited(self):
         return filter(lambda v: v.visited is False, self.vertices)

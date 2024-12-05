@@ -41,6 +41,8 @@ f = Vertex(-5, 5, name='f')
 g = Vertex(5, 10, name='g')
 h = Vertex(0, 10, name='h')
 
+# Set edges manually
+
 graph.connect_vertices(a, b) # set weight with weight=x
 graph.connect_vertices(a, c)
 graph.connect_vertices(a, d)
@@ -48,6 +50,22 @@ graph.connect_vertices(b, e)
 graph.connect_vertices(d, e)
 graph.connect_vertices(e, g)
 graph.connect_vertices(g, h)
+
+# Set edges via matrix
+
+# graph.apply_edges(
+#   [a, b, c, d, e, f, g, h],
+#   [
+#     [0, 5, 5, 5, 0, 0, 0, 0],
+#     [5, 0, 0, 0, 5, 0, 0, 0],
+#     [5, 0, 0, 0, 0, 5, 0, 0],
+#     [5, 0, 0, 0, 5, 5, 0, 0],
+#     [0, 5, 0, 5, 0, 0, 5, 0],
+#     [0, 0, 5, 5, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 5, 0, 0, 5],
+#     [0, 0, 0, 0, 0, 0, 5, 0],
+#   ]
+# )
 
 path = graph.find_shortest_path(a, h)
 
