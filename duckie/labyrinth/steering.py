@@ -4,9 +4,11 @@ import rospy
 import math
 import numpy as np
 import tf2_ros as tf
+from simple_pid import PID
+from std_msgs.msg import Float64
 
 import geometry_msgs.msg
-from duckietown_msgs.msg import WheelsCmdStamped, WheelEncoderStamped
+from duckietown_msgs.msg import WheelsCmdStamped, WheelEncoderStamped#, Twist2DStamped
 from std_msgs.msg import Header
 from camera import CameraSubscriber
 from tf.transformations import quaternion_from_euler
@@ -38,6 +40,7 @@ class DifferentialSteering:
         self.axis_width = 0.1
         self.radius = 0.0318
         self.max_speed = 0.2
+        self.tile_width = 0.3
         # Calculated position
         self.x = 0
         self.y = 0
@@ -45,14 +48,34 @@ class DifferentialSteering:
 
         rospy.Subscriber(left_wheel_tick_topic, WheelEncoderStamped, self.callback_left_wheel_tick)
         rospy.Subscriber(right_wheel_tick_topic, WheelEncoderStamped, self.callback_right_wheel_tick)
+        # self.control_pub = rospy.Publisher("/duckiebot_control", Twist2DStamped, queue_size=10)
+
+        # rospy.Subscriber("/current_speed", Float64, self.speed_callback)
+        # rospy.Subscriber("/current_steering_angle", Float64, self.steering_callback)
+
 
         self.transform_broadcaster = tf.TransformBroadcaster()
 
         self.camera = CameraSubscriber(robot_name)
 
+        self.speed_pid = PID(kp=1.0, ki=0.01, kd=0.1)  # For speed control
+        self.steering_pid = PID(kp=1.5, ki=0.05, kd=0.2)  # For steering control
+
         # set the robot at pose (0,0,0)
         self.publish_transform(x=0, y=0, theta=0)
        
+        # Current state variables
+        self.current_speed = 0.0
+        self.current_steering_angle = 0.0
+
+    # def speed_callback(self, msg):
+    #     """Callback to update current speed."""
+    #     self.current_speed = msg.data
+
+    # def steering_callback(self, msg):
+    #     """Callback to update current steering angle."""
+    #     self.current_steering_angle = msg.data
+
 
     def callback_left_wheel_tick(self, data):
         self.left_tick_count = data.data
@@ -85,10 +108,6 @@ class DifferentialSteering:
 
             if abs(angle_difference) > 0.7:
                 print("Fixed rotation")
-                # if abs(angle_difference) < tolerance:
-                #     self.turn_wheels(0, 0)
-                #     rospy.sleep(0.1)
-                #     break
                 # Rotate in place: if angle difference is positive, turn right; else, turn left
                 if angle_difference > 0:
                     self.turn_wheels(self.max_speed, -self.max_speed)
@@ -97,12 +116,9 @@ class DifferentialSteering:
             else:
                 print("Visual rotation")
                 direction = self.camera.visual_rotation()
+                self.turn_wheels(-self.max_speed * direction, self.max_speed * direction)
                 if direction == 0:
                     break
-                elif direction == 1:
-                    self.turn_wheels(-self.max_speed, self.max_speed)
-                elif direction == -1:
-                    self.turn_wheels(self.max_speed, -self.max_speed)
             rospy.sleep(0.1)
 
     def move_to_point(self, target_x, target_y, target_angle=None, tolerance=0.05):
@@ -111,6 +127,9 @@ class DifferentialSteering:
         """
         if target_angle is None:
             target_angle = math.atan2(target_y - self.y, target_x - self.x)
+        
+        pid = PID(1, 0.01, 0.01, setpoint=1)
+        
         while not rospy.is_shutdown():
             # Calculate distance and angle to the target
             distance_to_target = math.sqrt((target_x - self.x)**2 + (target_y - self.y)**2)
@@ -120,13 +139,26 @@ class DifferentialSteering:
                 self.turn_wheels(0, 0)
                 print("Reached the target!")
                 break
-
-            # Rotate to face the target angle
-            # self.rotate_to_angle(target_angle)
-
+            
             # Move forward once aligned
             move_speed = min(self.max_speed*2, distance_to_target)
             self.turn_wheels(move_speed, move_speed)
+
+            # Regler: Rotate to face the target angle
+            angle_error = self.camera.angle_diff()
+            print('angle error:', angle_error)
+            output = pid(angle_error)
+            print('regler: ', output)
+
+            steering_control = self.steering_pid.pid(angle_error)
+            if angle_error < 0:
+                move_speed_left = move_speed + steering_control
+                move_speed_right = move_speed - steering_control
+                self.turn_wheels(move_speed_left, move_speed_right)
+            else:
+                move_speed_right = move_speed + steering_control
+                move_speed_left = move_speed - steering_control
+                self.turn_wheels(move_speed_left, move_speed_right)
 
             rospy.loginfo(f'distance: {distance_to_target}, target angle: {target_angle}, speed: {move_speed}')
             # Small delay to allow for control updates
@@ -134,7 +166,8 @@ class DifferentialSteering:
 
     def run(self):
         self.turn_wheels()
-        self.rotate_to_angle(1.5)
+        #self.rotate_to_angle(1.5)
+        self.move_to_point(0.5, 0)
         rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
         self.turn_wheels()
         
