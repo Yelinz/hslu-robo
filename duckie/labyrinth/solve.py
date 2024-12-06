@@ -1,55 +1,39 @@
 from duckie.labyrinth.graph import Graph, Vertex
-
-# BFS to find the shortest path
-# 0 no node
-# 1 node
-# 2 start
-# 3 end
-# every red dot is a node, yellow lines are vectors
-labyrinth = [
-  [0, 0, 1, 1, 1, 1, 2],
-  [0, 0, 1, 0, 0, 0, 0],
-  [0, 1, 1, 1, 1, 1, 0],
-  [0, 0, 1, 0, 0, 1, 0],
-  [3, 1, 1, 1, 0, 1, 1],
-  [0, 0, 1, 0, 0, 0, 0],
-]
-
-# djisktra representation
-# Distance matrix (Adjacency matrix)
-labyrinth = [
-# 1  2  3  4
-  [0, 3, 0, 0, 0, 0, 0], # 1
-  [0, 0, 2, 0, 0, 0, 0], # 2
-  [0, 0, 0, 1, 2, 0, 2],
-  [0, 0, 0, 0, 0, 2, 0],
-  [0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0], # n
-]
-START_NODE = 1
-END_NODE = 3
-
 # construct graph from matrix
 graph = Graph()
 
-a = Vertex(0, 0, name='a')
-b = Vertex(5, 0, name='b')
-c = Vertex(-5, 0, name='c')
-d = Vertex(0, 5, name='d')
-e = Vertex(5, 5, name='e')
-f = Vertex(-5, 5, name='f')
-g = Vertex(5, 10, name='g')
-h = Vertex(0, 10, name='h')
+start = Vertex(0, 0, name='start') # start
+a = Vertex(3, 0, name='a')
+b = Vertex(7, 0, name='b')
+c = Vertex(8, 0, name='c')
+d = Vertex(9, 0, name='d')
+end = Vertex(11, 0, name='end') # end
+e = Vertex(9, -1, name='e')
+f = Vertex(1, 2, name='f')
+g = Vertex(3, 2, name='g')
+h = Vertex(7, 2, name='h')
+i = Vertex(9, 2, name='i')
+j = Vertex(10, 2, name='j')
+k = Vertex(1, 4, name='k')
+l = Vertex(3, 4, name='l')
+m = Vertex(9, 4, name='m')
 
 # Set edges manually
 
-graph.connect_vertices(a, b) # set weight with weight=x
-graph.connect_vertices(a, c)
-graph.connect_vertices(a, d)
-graph.connect_vertices(b, e)
+graph.connect_vertices(start, a) # set weight with weight=x
+graph.connect_vertices(a, b)
+graph.connect_vertices(a, g)
+graph.connect_vertices(b, h)
+graph.connect_vertices(d, c)
 graph.connect_vertices(d, e)
-graph.connect_vertices(e, g)
-graph.connect_vertices(g, h)
+graph.connect_vertices(d, end)
+graph.connect_vertices(g,f)
+graph.connect_vertices(g,l)
+graph.connect_vertices(i,j)
+graph.connect_vertices(i,h)
+graph.connect_vertices(i,m)
+graph.connect_vertices(f,k)
+graph.connect_vertices(l,m)
 
 # Set edges via matrix
 
