@@ -7,10 +7,7 @@ from sensor_msgs.msg import CompressedImage
 import numpy as np
 
 class CameraSubscriber:
-    
     def __init__(self, robot_name):
-        # initialize a node with a name, annonymous=True ensures that the name is unique
-        rospy.init_node('camera_listener', anonymous=True)
         # subscribe to a topic of type CompressedImage  
         topic = '/' + robot_name + '/camera_node/image/compressed'
         # when a message is received, the callback is invoked
@@ -19,13 +16,13 @@ class CameraSubscriber:
         
         # create a openCV <-> ROS bridge
         self.cv2_bridge = CvBridge()
-        self.rate = rospy.Rate(10)  # the node is running at 10 hz
+        self.rate = rospy.Rate(20)  # the node is running at 10 hz
 
     def callback(self, data):
         # the callback should be light and fast
         self.image = data
 
-    def do_image_processing(self):
+    def visual_rotation(self):
         # image processing is done on the latest image received
         img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
         # cutoff the top half of the image, that part does not matter
@@ -50,15 +47,17 @@ class CameraSubscriber:
             cv2.imwrite('./contour.png', filtered)
 
             # Correct the robot's direction
-            tolerance = 10
+            tolerance = 3
+            print("cx, tol: ", cx, frame_width // tolerance)
             if cx < frame_width // tolerance:
-                # self.left()
                 print('turn left')
+                return 1
             elif cx > 2 * frame_width // tolerance:
-                # self.right()
                 print('turn right')
+                return -1
             else:
                 print("Moving forward...")
+                return 0
         else:
             print("no line detected")
 
@@ -83,11 +82,13 @@ class CameraSubscriber:
 
     def run(self):
         while not rospy.is_shutdown():
-            self.do_image_processing()
+            self.visual_rotation()
             self.rate.sleep()
 
 
 if __name__ == '__main__':
     robot_name = "phi"
+    # initialize a node with a name, annonymous=True ensures that the name is unique
+    rospy.init_node('camera_listener', anonymous=True)
     cs = CameraSubscriber(robot_name)
     cs.run()
