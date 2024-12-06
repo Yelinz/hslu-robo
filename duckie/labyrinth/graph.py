@@ -40,7 +40,9 @@ class Graph:
         self.vertices = set()
         self.edges = []
 
-    def connect_vertices(self, from_vertex, to_vertex, weight=1, direction='bidirectional'):
+    def connect_vertices(self, from_vertex, to_vertex, weight=None, direction='bidirectional'):
+        if weight is None:
+            weight = abs(from_vertex.x - to_vertex.x) + abs(from_vertex.y - to_vertex.y)
         self.edges.append(Edge(from_vertex, to_vertex, weight))
         if direction == 'bidirectional':
             self.edges.append(Edge(to_vertex, from_vertex, weight))
