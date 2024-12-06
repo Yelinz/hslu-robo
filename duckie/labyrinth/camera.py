@@ -22,15 +22,16 @@ class CameraSubscriber:
         # the callback should be light and fast
         self.image = data
 
-    def visual_rotation(self):
+    def angle_diff(self, debug=False):
         # image processing is done on the latest image received
         img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
         # cutoff the top half of the image, that part does not matter
         img = img[img.shape[0]//2:, :]
 
-        cv2.imwrite('./raw.png', img)
         filtered, mask = self.filter_line(img)
-        cv2.imwrite('./filtered.png', filtered)
+        if debug:
+            cv2.imwrite('./raw.png', img)
+            cv2.imwrite('./filtered.png', filtered)
 
         frame_height, frame_width, _ = filtered.shape
 
@@ -39,20 +40,52 @@ class CameraSubscriber:
         # Find the largest contour, assuming it is the line
         if contours is not None:
             contour = max(contours, key=cv2.contourArea)
-            cx = self.get_line_position(contour, frame_width)
+            line_x = self.get_line_position(contour, frame_width)
 
             # Draw the contour and center line for visualization
             cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
-            cv2.line(filtered, (cx, 0), (cx, frame_height), (255, 0, 0), 2)
-            cv2.imwrite('./contour.png', filtered)
+            cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
+            if debug:
+                cv2.imwrite('./contour.png', filtered)
 
             # Correct the robot's direction
-            tolerance = 3
-            print("cx, tol: ", cx, frame_width // tolerance)
-            if cx < frame_width // tolerance:
+            center_x = frame_width // 2
+            center_diff = line_x - center_x
+            return np.arctan(center_diff / frame_height)
+
+    def visual_rotation(self, debug=False):
+        # image processing is done on the latest image received
+        img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
+        # cutoff the top half of the image, that part does not matter
+        img = img[img.shape[0]//2:, :]
+
+        filtered, mask = self.filter_line(img)
+        if debug:
+            cv2.imwrite('./raw.png', img)
+            cv2.imwrite('./filtered.png', filtered)
+
+        frame_height, frame_width, _ = filtered.shape
+
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Find the largest contour, assuming it is the line
+        if contours is not None:
+            contour = max(contours, key=cv2.contourArea)
+            line_x = self.get_line_position(contour, frame_width)
+
+            # Draw the contour and center line for visualization
+            cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
+            cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
+            if debug:
+                cv2.imwrite('./contour.png', filtered)
+
+            # Correct the robot's direction
+            center_x = frame_width // 2
+            tolerance = 15
+            if line_x < center_x - tolerance:
                 print('turn left')
                 return 1
-            elif cx > 2 * frame_width // tolerance:
+            elif line_x > center_x + tolerance:
                 print('turn right')
                 return -1
             else:
@@ -76,8 +109,8 @@ class CameraSubscriber:
         """Get the x-coordinate of the center of the line."""
         M = cv2.moments(contour)
         if M["m00"] > 0:
-            cx = int(M["m10"] / M["m00"])
-            return cx
+            line_x = int(M["m10"] / M["m00"])
+            return line_x
         return frame_width // 2  # Default to center if no contour
 
     def run(self):
