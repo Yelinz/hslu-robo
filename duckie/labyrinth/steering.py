@@ -12,7 +12,7 @@ from duckietown_msgs.msg import WheelsCmdStamped, WheelEncoderStamped#, Twist2DS
 from std_msgs.msg import Header
 from camera import CameraSubscriber
 from tf.transformations import quaternion_from_euler
-from solve import path
+from solve import points
 
 class DifferentialSteering:
     def __init__(self, robot_name):
@@ -112,18 +112,20 @@ class DifferentialSteering:
                 print("Fixed rotation")
                 # Rotate in place: if angle difference is positive, turn right; else, turn left
                 if angle_difference > 0:
-                    self.turn_wheels(self.max_speed, -self.max_speed)
+                    self.turn_wheels(self.max_speed*2, -self.max_speed*2)
                 else:
-                    self.turn_wheels(-self.max_speed, self.max_speed)
+                    self.turn_wheels(-self.max_speed*2, self.max_speed*2)
             else:
                 print("Visual rotation")
                 direction = self.camera.visual_rotation()
+                if target_angle == 0 and direction == 0:
+                    break
                 self.turn_wheels(-self.max_speed * direction, self.max_speed * direction)
                 if direction == 0:
                     break
             rospy.sleep(0.05)
 
-    def move_to_point_pid(self, target_x, target_y, target_angle=None, tolerance=0.05):
+    def move_to_point_pid(self, target_x, target_y, target_angle=None, tolerance=0.1):
         """
         Move the robot from its current position to a target point (target_x, target_y).
         """
@@ -137,7 +139,9 @@ class DifferentialSteering:
             distance_to_target = math.sqrt((target_x - self.x)**2 + (target_y - self.y)**2)
 
             # Check if we have reached the target within tolerance
-            if distance_to_target < tolerance:
+            rospy.loginfo(f"target_x {target_x} x: {self.x}, target_y {target_y} y: {self.y}, theta: {self.angle}")
+            if (target_x and (abs(target_x - self.x) < tolerance)) or (target_y and (abs(target_y - self.y)< tolerance)):
+            # if distance_to_target < tolerance:
                 self.turn_wheels(0, 0)
                 print("Reached the target!")
                 break
@@ -149,9 +153,9 @@ class DifferentialSteering:
 
             # Regler: Rotate to face the target angle
             angle_error = self.camera.angle_diff()
-            print('angle error:', angle_error)
-            steering_control = pid(angle_error) * 0.1
-            rospy.loginfo(f'steering control {steering_control}')
+            # print('angle error:', angle_error)
+            steering_control = pid(angle_error) * 0.15
+            # rospy.loginfo(f'steering control {steering_control}')
             move_speed_left, move_speed_right = 0, 0
             if angle_error < 0:
                 move_speed_left = move_speed - steering_control
@@ -160,14 +164,14 @@ class DifferentialSteering:
                 move_speed_left = move_speed + steering_control
                 move_speed_right = move_speed - steering_control
 
-            rospy.loginfo(f'move speed: left {move_speed_left}, right {move_speed_right}')
+            # rospy.loginfo(f'move speed: left {move_speed_left}, right {move_speed_right}')
             self.turn_wheels(move_speed_left, move_speed_right)
 
-            rospy.loginfo(f'distance: {distance_to_target}, target angle: {target_angle}')
+            # rospy.loginfo(f'distance: {distance_to_target}, target angle: {target_angle}')
             # Small delay to allow for control updates
-            rospy.sleep(.5)
+            rospy.sleep(.05)
             
-    def move_to_point(self, target_x, target_y, target_angle=None, tolerance=0.05):
+    def move_to_point(self, target_x, target_y, target_angle=None, tolerance=0.1):
         """
         Move the robot from its current position to a target point (target_x, target_y).
         """
@@ -203,20 +207,32 @@ class DifferentialSteering:
     def run(self):
         self.turn_wheels()
 
-        # n_nodes = len(path)
-        # for i in range(n_nodes):
-        #     node = path[i]
-        #     rospy.loginfo(f"next target {node.x*self.tile_width} {node.y*self.tile_width}")
-        #     self.move_to_point(node.x*self.tile_width, node.y*self.tile_width)
+        
+        rospy.loginfo(points)
+        n_nodes = len(points)
+        curr_node = points[0]
+        for i in range(n_nodes):
+            i = i+1
+            node = points[i]
+            if i <= n_nodes-2:
+                next_node = points[i+1]
 
-        #     if i <= n_nodes-1:
-        #         next_node = path[i+1]
-        #         target_angle = math.atan2((next_node.y - node.y)*self.tile_width, (next_node.x - node.x)*self.tile_width)
-        #         # target_angle = math.atan2(next_node.y*self.tile_width - self.y, next_node.x*self.tile_width - self.x)
-        #         self.rotate_to_angle(target_angle)
-        # rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
+            rospy.loginfo(f"------------------------------------------")
+            rospy.loginfo(f"next target {node[0]} {node[1]}, next next target {next_node[0]} {next_node[1]}")
 
-        self.move_to_point_pid(2, 0)
+            self.move_to_point_pid((node[0] - curr_node[0])*self.tile_width, (node[1] - curr_node[1])*self.tile_width)
+
+            if i <= n_nodes-1:
+                target_angle = math.atan2((next_node[1] - node[1])*self.tile_width, (next_node[0] - node[0])*self.tile_width)
+                self.rotate_to_angle(target_angle)
+            
+            curr_node = node
+            self.x = 0
+            self.y = 0
+
+        rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
+
+        # self.move_to_point_pid(2, 0)
 
         self.turn_wheels()
         
@@ -266,7 +282,7 @@ class DifferentialSteering:
         self.angle = np.arctan2(np.sin(a), np.cos(a))
         self.prev_left_tick += left_tick
         self.prev_right_tick += right_tick
-        rospy.loginfo_throttle(0.2, f'x {self.x} y {self.y} angle {self.angle}')
+        # rospy.loginfo_throttle(0.2, f'x {self.x} y {self.y} angle {self.angle}')
 
 if __name__ == '__main__':
     robot_name = "lamda"
