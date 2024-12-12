@@ -42,7 +42,8 @@ class Graph:
 
     def connect_vertices(self, from_vertex, to_vertex, weight=None, direction='bidirectional'):
         if weight is None:
-            weight = abs(from_vertex.x - to_vertex.x) + abs(from_vertex.y - to_vertex.y)
+            weight = abs(to_vertex.x - from_vertex.x + to_vertex.y - from_vertex.y)
+
         self.edges.append(Edge(from_vertex, to_vertex, weight))
         if direction == 'bidirectional':
             self.edges.append(Edge(to_vertex, from_vertex, weight))
@@ -61,10 +62,13 @@ class Graph:
                 self.edges.append(Edge(vertices[from_vertex_i], vertices[to_vertex_i], weight))
 
     def unvisited(self):
-        return filter(lambda v: v.visited is False, self.vertices)
+        return list(filter(lambda v: v.visited is False, self.vertices))
 
     def vertex_with_lowest_cost(self):
-        return min(self.unvisited(), key=lambda v: v.cost)
+        unvisited = list(filter(lambda v: v.cost < math.inf, self.unvisited()))
+        if len(unvisited) == 0:
+            return None
+        return min(unvisited, key=lambda v: v.cost)
 
     def unvisited_neighbors(self, vertex):
         return [
@@ -83,8 +87,11 @@ class Graph:
             edges = self.unvisited_neighbors(vertex)
 
             for edge in edges:
-                if edge.to_vertex.cost > vertex.cost + edge.weight:
-                    edge.to_vertex.set_predecessor(vertex, edge.weight)
+                to_vertex = edge.to_vertex
+                new_cost = vertex.cost + edge.weight
+
+                if to_vertex.cost > new_cost:
+                    to_vertex.set_predecessor(vertex, new_cost)
 
             vertex.visit()
 
