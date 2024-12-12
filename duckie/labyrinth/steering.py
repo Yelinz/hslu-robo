@@ -143,29 +143,29 @@ class DifferentialSteering:
                 break
             
             # Move forward once aligned
-            move_speed = min(self.max_speed*2, distance_to_target)
+            move_speed = min(self.max_speed, distance_to_target)
             move_speed = max(0.3, move_speed)
             self.turn_wheels(move_speed, move_speed)
 
             # Regler: Rotate to face the target angle
             angle_error = self.camera.angle_diff()
             print('angle error:', angle_error)
-            steering_control = pid(angle_error) * 0.01
+            steering_control = pid(angle_error) * 0.1
             rospy.loginfo(f'steering control {steering_control}')
             move_speed_left, move_speed_right = 0, 0
             if angle_error < 0:
                 move_speed_left = move_speed - steering_control
                 move_speed_right = move_speed + steering_control
             else:
-                move_speed_right = move_speed - steering_control
                 move_speed_left = move_speed + steering_control
+                move_speed_right = move_speed - steering_control
 
             rospy.loginfo(f'move speed: left {move_speed_left}, right {move_speed_right}')
             self.turn_wheels(move_speed_left, move_speed_right)
 
             rospy.loginfo(f'distance: {distance_to_target}, target angle: {target_angle}')
             # Small delay to allow for control updates
-            rospy.sleep(0.1)
+            rospy.sleep(.5)
             
     def move_to_point(self, target_x, target_y, target_angle=None, tolerance=0.05):
         """
@@ -203,20 +203,20 @@ class DifferentialSteering:
     def run(self):
         self.turn_wheels()
 
-        n_nodes = len(path)
-        for i in range(n_nodes):
-            node = path[i]
-            rospy.loginfo(f"next target {node.x*self.tile_width} {node.y*self.tile_width}")
-            self.move_to_point(node.x*self.tile_width, node.y*self.tile_width)
+        # n_nodes = len(path)
+        # for i in range(n_nodes):
+        #     node = path[i]
+        #     rospy.loginfo(f"next target {node.x*self.tile_width} {node.y*self.tile_width}")
+        #     self.move_to_point(node.x*self.tile_width, node.y*self.tile_width)
 
-            if i <= n_nodes-1:
-                next_node = path[i+1]
-                target_angle = math.atan2((next_node.y - node.y)*self.tile_width, (next_node.x - node.x)*self.tile_width)
-                # target_angle = math.atan2(next_node.y*self.tile_width - self.y, next_node.x*self.tile_width - self.x)
-                self.rotate_to_angle(target_angle)
-        rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
+        #     if i <= n_nodes-1:
+        #         next_node = path[i+1]
+        #         target_angle = math.atan2((next_node.y - node.y)*self.tile_width, (next_node.x - node.x)*self.tile_width)
+        #         # target_angle = math.atan2(next_node.y*self.tile_width - self.y, next_node.x*self.tile_width - self.x)
+        #         self.rotate_to_angle(target_angle)
+        # rospy.loginfo(f"end x: {self.x}, y: {self.y}, theta: {self.angle}")
 
-        # self.move_to_point_pid(1, 0)
+        self.move_to_point_pid(2, 0)
 
         self.turn_wheels()
         
