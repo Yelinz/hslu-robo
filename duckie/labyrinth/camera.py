@@ -26,7 +26,8 @@ class CameraSubscriber:
         # image processing is done on the latest image received
         img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
         # cutoff the top half of the image, that part does not matter
-        img = img[img.shape[0]//3:, :]
+        partial_shape = img.shape[1]//3
+        img = img[img.shape[0]//3:, partial_shape:img.shape[1] - partial_shape]
 
         filtered, mask = self.filter_line(img)
         if debug:
@@ -43,9 +44,9 @@ class CameraSubscriber:
             line_x = self.get_line_position(contour, frame_width)
 
             # Draw the contour and center line for visualization
-            cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
-            cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
             if debug:
+                cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
+                cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
                 cv2.imwrite('./contour.png', filtered)
 
             # Correct the robot's direction
