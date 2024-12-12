@@ -26,7 +26,7 @@ class CameraSubscriber:
         # image processing is done on the latest image received
         img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
         # cutoff the top half of the image, that part does not matter
-        img = img[img.shape[0]//2:, :]
+        img = img[img.shape[0]//3:, :]
 
         filtered, mask = self.filter_line(img)
         if debug:
