@@ -17,6 +17,8 @@ class CameraSubscriber:
         # create a openCV <-> ROS bridge
         self.cv2_bridge = CvBridge()
         self.rate = rospy.Rate(20)  # the node is running at 10 hz
+        self.out_straight = cv2.VideoWriter('output_straight.mp4', cv2.VideoWriter_fourcc(*'avc1'), 20.0, (214, 320))
+        self.out_rotation = cv2.VideoWriter('output_rotation.mp4', cv2.VideoWriter_fourcc(*'avc1'), 20.0, (640,240))
 
     def callback(self, data):
         # the callback should be light and fast
@@ -26,20 +28,20 @@ class CameraSubscriber:
         # image processing is done on the latest image received
         img = self.cv2_bridge.compressed_imgmsg_to_cv2(self.image, "bgr8")
         # cutoff the top half of the image, that part does not matter
-        partial_shape = img.shape[1]//4
+        partial_shape = img.shape[1]//3
         img = img[img.shape[0]//3:, partial_shape:img.shape[1] - partial_shape]
 
         filtered, mask = self.filter_line(img)
         if debug:
-            cv2.imwrite('./raw.png', img)
-            cv2.imwrite('./filtered.png', filtered)
+            cv2.imwrite('./angle_diff_raw.png', img)
+            cv2.imwrite('./angle_diff_filtered.png', filtered)
 
         frame_height, frame_width, _ = filtered.shape
 
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         # Find the largest contour, assuming it is the line
-        if contours is not None:
+        if contours:
             contour = max(contours, key=cv2.contourArea)
             line_x = self.get_line_position(contour, frame_width)
 
@@ -47,12 +49,15 @@ class CameraSubscriber:
             if debug:
                 cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
                 cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
-                cv2.imwrite('./contour.png', filtered)
+                cv2.imwrite('./angle_diff_contour.png', filtered)
+                print("new frame", frame_height, frame_width)
+                self.out_straight.write(filtered)
 
             # Correct the robot's direction
             center_x = frame_width // 2
             center_diff = line_x - center_x
             return np.arctan(center_diff / frame_height)
+        return 0
 
     def visual_rotation(self, debug=False):
         # image processing is done on the latest image received
@@ -62,15 +67,15 @@ class CameraSubscriber:
 
         filtered, mask = self.filter_line(img)
         if debug:
-            cv2.imwrite('./raw.png', img)
-            cv2.imwrite('./filtered.png', filtered)
+            cv2.imwrite('./visual_rotation_raw.png', img)
+            cv2.imwrite('./visual_rotation_filtered.png', filtered)
 
         frame_height, frame_width, _ = filtered.shape
 
         contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         # Find the largest contour, assuming it is the line
-        if contours is not None:
+        if contours:
             contour = max(contours, key=cv2.contourArea)
             line_x = self.get_line_position(contour, frame_width)
 
@@ -78,7 +83,9 @@ class CameraSubscriber:
             if debug:
                 cv2.drawContours(filtered, [contour], -1, (0, 255, 0), 3)
                 cv2.line(filtered, (line_x, 0), (line_x, frame_height), (255, 0, 0), 2)
-                cv2.imwrite('./contour.png', filtered)
+                cv2.imwrite('./visual_rotation_contour.png', filtered)
+                print(frame_height, frame_width)
+                self.out_rotation.write(filtered)
 
             # Correct the robot's direction
             center_x = frame_width // 2
@@ -88,7 +95,7 @@ class CameraSubscriber:
                 return 1
             elif line_x > center_x + tolerance:
                 print('turn right')
-                return -1
+                return -1.1
             else:
                 print("Moving forward...")
                 return 0
@@ -115,9 +122,11 @@ class CameraSubscriber:
         return frame_width // 2  # Default to center if no contour
 
     def run(self):
-        while not rospy.is_shutdown():
-            self.visual_rotation()
+        i = 0
+        while i < 100:
+            self.angle_diff(True)
             self.rate.sleep()
+            i += 1
 
 
 if __name__ == '__main__':
@@ -126,3 +135,5 @@ if __name__ == '__main__':
     rospy.init_node('camera_listener', anonymous=True)
     cs = CameraSubscriber(robot_name)
     cs.run()
+    cs.out_rotation.release()
+    cs.out_straight.release()
